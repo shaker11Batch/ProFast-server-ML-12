@@ -4,7 +4,8 @@ const dotenv = require('dotenv')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config()
 
-const stripe =require('stripe')('your_stripe_secret_key')
+// payment 
+const stripe =require('stripe')(process.env.PAYMENT_KEY)
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -31,6 +32,8 @@ async function run() {
 
 
         const parcelCollection = client.db('zap-shift-user').collection('parcels')
+
+        const paymentCollection = client.db('zap-shift-user').collection('payments')
 
 
         app.get('/parcels', async (req, res) => {
@@ -113,17 +116,81 @@ async function run() {
             }
         })
 
+        // 3 payment gets
+        app.get('/payments', async (req, res) => {
+            try {
+                const userEmail = req.query.userEmail
+                const query = userEmail ? { email: userEmail } : {}
+                const options = { sort: { paid_at: -1 } }
+                const payments = await paymentCollection.find(query, options).toArray();
+                res.send(payments)
+            } catch(error) {
+                console.log(error)
+            }
+        })
+
+
+
+
+
+        
+        // 2 Post : Record Payment and update parcel status
+        
+        app.post('/payment', async (req, res) => {
+            try {
+                const { parcelId, email, amount, paymentMethod, transactionId } = req.body;
+                if (!parcelId || !email || !amount) {
+                    return res.status(400).send({message: 'parcelId, email, amount is required'})
+                }
+
+                // 1 update parcel's payment status
+                const updateResult = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: {
+                            payment_status: 'paid'
+                        }
+                    }
+                )
+
+                if (updateResult.matchedCount === 0) {
+                    return res.status(404).send({message: 'parcel not found or already paid'})
+                }
+                // 2 Insert payment record
+                const paymentDoc = {
+                    parcelId,
+                    email,
+                    amount,
+                    paymentMethod,
+                    transactionId,
+                    paid_at_string: new Date().toISOString(),
+                    paidAt: new Date()
+                }
+
+                const paymentResult = await paymentCollection.insertOne(paymentDoc)
+
+                res.status(201).send({
+                    message: 'Payment recorded and parcel marked as paid',
+                    insertedId: paymentResult.insertedId
+                })
+
+            } catch {
+                
+            }
+        })
+
 
         // payment method api 
 
-        app.post('/create-payment-intent', async(req, res) =>{
+        app.post('/create-payment-intent', async (req, res) => {
+            const amountInCents = req.body.amountInCents
             try{
-                const payment = await stripe.paymentIntents.create({
-                    amount:1000,
-                    currency: 'used',
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount:amountInCents,
+                    currency: 'usd',
                     payment_method_types: ['card'],
                 });
-                res.json({clientSecret: paymentIntents.client_secret})
+                res.json({clientSecret: paymentIntent.client_secret})
             }catch(error){
                 res.status(500).json({error: error.message})
             }
