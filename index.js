@@ -116,10 +116,37 @@ async function run() {
             }
         })
 
+
+
+
+// 4 tracking parcel 
+
+app.post('/tracking', async(req,res) =>{
+    const {tracking_id, parcel_id, status, message, updated_by=''}= req.body;
+    const log={
+        tracking_id,
+        parcel_id: parcel_id? new ObjectId(parcel_id) : undefined,
+        status,
+        message,
+        time: new Date(),
+        updated_by,
+    };
+
+    const result = await trackingCollection.insertOne(log);
+    res.send({success: true, insertedId: result.insertedId})
+})
+
+
+
+
+
+
+
         // 3 payment gets
-        app.get('/payments', async (req, res) => {
+        app.get('/payment', async (req, res) => {
             try {
                 const userEmail = req.query.userEmail
+                console.log(userEmail)
                 const query = userEmail ? { email: userEmail } : {}
                 const options = { sort: { paid_at: -1 } }
                 const payments = await paymentCollection.find(query, options).toArray();
